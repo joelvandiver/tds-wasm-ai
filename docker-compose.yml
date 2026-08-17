@@ -1,0 +1,38 @@
+# The WebAssembly sandbox is the inner boundary; these settings are the outer
+# one. Neither is a substitute for the other — the container hardening below
+# assumes the host process is already refusing to hand the guest anything the
+# policy does not name.
+
+services:
+  agent:
+    build: .
+    image: tds-wasm-ai:dev
+    ports:
+      - "8080:8080"
+    environment:
+      TDS_POLICY: /app/policy/default.toml
+      TDS_LOG: info
+      # Read from the shell or a .env file. This is the only secret involved,
+      # and it stays in the host process — it never reaches the sandbox.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY, or switch TDS_POLICY to /app/policy/mock.toml}
+
+    # The runtime writes nothing to disk.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    # A second ceiling under the policy's own limits, in case a bug in the host
+    # lets a runaway guest through.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tds-host", "check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

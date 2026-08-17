@@ -1,0 +1,9 @@
+target/
+crates/*/target/
+.git/
+.github/
+*.md
+!README.md
+.gitignore
+docker-compose.yml
+Dockerfile

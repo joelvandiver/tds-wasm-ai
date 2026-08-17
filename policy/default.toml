@@ -1,0 +1,77 @@
+# Sandbox policy for the containerized agent runtime.
+#
+# This file is the whole of the agent's authority. Anything not granted here is
+# not reachable from inside the WebAssembly sandbox — there is no second path.
+
+[limits]
+# Guest compute budget. Wasmtime charges fuel per instruction, so this bounds
+# runaway computation regardless of what the agent's code does.
+fuel = 1_000_000_000
+
+# Total wall-clock budget for one run, model latency included. Enforced by
+# epoch interruption, so a guest that never calls back into the host is still
+# stopped.
+wall_clock_ms = 180_000
+
+# Ceiling on the guest's linear memory.
+memory_bytes = 67_108_864      # 64 MiB
+
+# Ceiling on guest table elements (indirect-call slots).
+table_elements = 10_000
+
+# Model turns per run, enforced host-side. The agent also counts its own steps,
+# but this is the limit that actually binds.
+max_steps = 8
+
+# Largest single capability request the guest may hand the host.
+max_request_bytes = 4_194_304  # 4 MiB
+
+[llm]
+provider = "anthropic"
+model = "claude-opus-5"
+max_tokens = 8192
+
+# Thinking depth and overall token spend. One of: low, medium, high, xhigh, max.
+effort = "high"
+
+# "adaptive" lets the model decide how much to think per turn. Setting this to
+# "disabled" is only valid at effort "high" or lower, and the host refuses to
+# start with an invalid combination rather than failing mid-run.
+thinking = "adaptive"
+
+# Ask for a readable summary of the model's reasoning. Off by default, which
+# means thinking blocks arrive with empty text.
+summarize_thinking = false
+
+base_url = "https://api.anthropic.com"
+api_version = "2023-06-01"
+
+# Only the *name* of the variable lives here. The key is read from the host
+# environment at startup and never crosses into guest memory.
+api_key_env = "ANTHROPIC_API_KEY"
+
+request_timeout_ms = 600_000
+max_retries = 2
+
+# Let the API re-run a policy-declined request on a recommended fallback model
+# inside the same call, so a benign request that trips a classifier still gets
+# answered instead of just stopping.
+server_side_fallback = true
+
+[tools]
+# The agent's entire tool surface. A tool left out of this list is not described
+# to the model, not listed, and refused if somehow requested anyway.
+enabled = ["now", "kv_get", "kv_put"]
+
+[tools.http]
+# `http_get` is not enabled above, so this is inert until you add it. Even then,
+# an empty allowlist reaches nothing: name hosts explicitly, one per entry.
+# A leading "*." matches subdomains ("*.example.com" covers docs.example.com);
+# there is no substring matching, so "evil-example.com" never passes.
+allowed_hosts = []
+max_response_bytes = 65_536
+timeout_ms = 15_000
+
+[tools.kv]
+max_keys = 128
+max_value_bytes = 16_384

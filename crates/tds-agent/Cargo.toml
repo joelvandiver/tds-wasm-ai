@@ -1,0 +1,25 @@
+# Detached from the host workspace: this crate only ever builds for
+# wasm32-unknown-unknown, where its `extern "C"` host imports resolve.
+[workspace]
+
+[package]
+name = "tds-agent"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "The AI agent, compiled to WebAssembly and run under the tds-wasm-ai host."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+tds-abi = { path = "../tds-abi" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
+codegen-units = 1
