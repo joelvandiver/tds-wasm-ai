@@ -1,0 +1,89 @@
+# GitHub Actions workflow for this project.
+#
+# It lives here rather than at .github/workflows/ci.yml because the session that
+# generated it could not push workflow files. To enable it:
+#
+#     mkdir -p .github/workflows && git mv ci/github-workflow.yml .github/workflows/ci.yml
+#
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add clippy rustfmt
+          rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            crates/tds-agent
+
+      - name: Build the agent module
+        run: make agent
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      # The agent runs end to end against the deterministic provider, so CI
+      # needs no API key and makes no network calls.
+      - name: Smoke test the sandbox
+        run: |
+          cargo build --release -p tds-host
+          ./target/release/tds-host run \
+            --agent crates/tds-agent/target/wasm32-unknown-unknown/release/tds_agent.wasm \
+            --policy policy/mock.toml \
+            --task 'Checkpoint the run.
+          !tool now {}
+          !tool kv_put {"key":"ci","value":"ok"}' \
+            --json | tee /tmp/report.json
+          grep -q '"stop": "completed"' /tmp/report.json
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: tds-wasm-ai:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the image starts and serves
+        run: |
+          docker run -d --name tds -p 8080:8080 \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            -e TDS_POLICY=/app/policy/mock.toml \
+            tds-wasm-ai:ci serve
+          for i in $(seq 1 30); do
+            curl -fsS localhost:8080/healthz && break || sleep 1
+          done
+          curl -fsS localhost:8080/v1/policy
+          curl -fsS localhost:8080/v1/runs \
+            -H 'content-type: application/json' \
+            -d '{"task":"Report the time.\n!tool now {}","max_steps":3}' | tee /tmp/run.json
+          grep -q '"stop":"completed"' /tmp/run.json
+          docker rm -f tds

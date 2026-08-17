@@ -274,6 +274,10 @@ make check   # validate policy and module
 make serve   # HTTP server on :8080
 ```
 
+A GitHub Actions workflow — build, lint, test, plus a container smoke test — is
+in [`ci/github-workflow.yml`](ci/github-workflow.yml). Move it to
+`.github/workflows/ci.yml` to enable it.
+
 The integration tests in `crates/tds-host/tests/sandbox.rs` run the real agent
 module under the real runtime with a scripted model, and assert on the boundary
 itself: that a WASI import is refused, that a spinning module is stopped by its
